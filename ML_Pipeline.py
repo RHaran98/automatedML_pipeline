@@ -3,7 +3,9 @@ import argparse
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.tree import DecisionTreeClassifier
 from xgboost.sklearn import XGBClassifier
-
+import os
+import logging
+logging.basicConfig(level=logging.DEBUG)
 
 def get_arguments():
     parser = argparse.ArgumentParser(description="Automated ML pipeline")
@@ -46,16 +48,17 @@ def train(args):
            "gb": GradientBoostingClassifier()}[clf]
 
     dataset = Dataset.from_csv(dataset_path, target=target, drop_cols=drop_columns, id_cols=id_columns, sep=sep)
-    train_dataset, test_dataset = Dataset.test_train_split()
+    train_dataset, test_dataset = dataset.test_train_split()
     automated_pipeline = AutomatedPipeline.make_pipeline(clf)
     automated_pipeline.pipeline.fit(train_dataset.features, train_dataset.target_col)
-    automated_pipeline.save_pipeline("pipeline.sav")
+    automated_pipeline.save_pipeline(os.path.join(os.path.dirname(dataset_path),"pipeline.sav"))
 
-    y_pred = automated_pipeline.pipeline.predict(test_dataset.features)
+    y_pred = automated_pipeline.pipeline.predict_proba(test_dataset.features)[:,1]
     y_true = test_dataset.target_col
 
+    logging.debug("y_pred {}".format(y_pred))
     results = Results(y_true=y_true, y_pred=y_pred)
-    results.gini_table.to_csv("Test summary.csv")
+    results.gini_table.to_csv(os.path.join(os.path.dirname(dataset_path), "Test_Summary.csv"))
 
 
 def oot(args):
@@ -67,7 +70,7 @@ def oot(args):
     y_pred_oot = automated_pipeline.predict(oot_dataset.features, oot_dataset.target_col)
     y_true_oot = oot_dataset.target_col
     oot_results = Results(y_true=y_true_oot, y_pred=y_pred_oot)
-    oot_results.gini_table.to_csv("OOT_Summary.csv")
+    oot_results.gini_table.to_csv(os.path.join(os.path.dirname(dataset_path), "OOT_Summary.csv"))
 
 
 def main():

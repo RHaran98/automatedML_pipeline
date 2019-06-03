@@ -3,10 +3,9 @@ import pandas as pd
 from category_encoders import WOEEncoder
 from sklearn.preprocessing import OneHotEncoder
 import joblib
-import os
 from sklearn.pipeline import Pipeline
 from sklearn.base import BaseEstimator, TransformerMixin
-
+import logging
 
 class Dataset(object):
     def __init__(self):
@@ -27,10 +26,11 @@ class Dataset(object):
 
     @classmethod
     def from_df(cls, df, target="TARGET", drop_cols=None, id_cols=None):
+        logging.info("Creating dataframe from ")
         cls = cls()
         assert isinstance(df, pd.DataFrame)
         cls.whole_df = df
-        cls.whole_cols = cls.whole_cols.columns
+        cls.whole_cols = cls.whole_df.columns
         cls.target = target
         # Basic checks
         assert len(cls.whole_cols) == len(set(cls.whole_cols))  # Check for duplicate column names
@@ -66,6 +66,8 @@ class Dataset(object):
             self.id_cols = list(set(self.whole_cols).intersection(id_cols))
         else:
             self.id_cols = []
+
+        self.whole_df = self.whole_df.replace([-np.inf, np.inf], np.nan)
         self.data = self.whole_df.drop(columns=self.drop_cols + self.id_cols)
 
         # Shift target to the last
@@ -73,7 +75,7 @@ class Dataset(object):
         _cols = list(self.data)
         _cols.insert(len(_cols), _cols.pop(_cols.index(self.target)))
         self.data = self.data.ix[:, _cols]
-        self.features = self.data.columns[-1]
+        # self.features = self.data.columns[-1]
 
         self._update_columns()
 
@@ -83,8 +85,8 @@ class Dataset(object):
     def _update_columns(self):
         self.n_rows = self.data.shape[0]
         self.n_cols = self.data.shape[0]
-        self.features = self.data.columns[-1]
-        self.feature_names = self.features.cols
+        self.features = self.data.iloc[:,:-1]
+        self.feature_names = self.features.columns
         self.target_col = self.data[self.target]
         self.cat_cols = self.features.dtypes[self.features.dtypes == "object"].index
         self.num_cols = self.features.dtypes[~(self.features.dtypes == "object")].index
@@ -177,8 +179,8 @@ class Dataset(object):
 
 class AutoDropColumns(BaseEstimator, TransformerMixin):
     # Class Constructor
-    def __init__(self, missing_threst=0.3, levels_thresh=0.3):
-        self.missing_thresh = missing_threst
+    def __init__(self, missing_thresh=0.3, levels_thresh=0.3):
+        self.missing_thresh = missing_thresh
         self.levels_thresh = levels_thresh
 
     def fit(self, X, y=None):
@@ -191,7 +193,9 @@ class AutoDropColumns(BaseEstimator, TransformerMixin):
         cols = X.dtypes[X.dtypes == "object"].index
         for i in cols:
             if len(X[i].unique()) > levels_thresh:
+                logging.debug("Dropping column {0}".format(i))
                 X.drop(columns=i, inplace=True)
+        logging.debug("Columns {0}".format(X.columns))
         return X
 
 
@@ -204,7 +208,7 @@ class ColumnsSelector(BaseEstimator, TransformerMixin):
             self._cols = cols
 
     def fit(self, X, y=None):
-        X._cols = X.columns
+        self._cols = X.columns
         return self
 
     def transform(self, X, y=None):
@@ -237,12 +241,13 @@ class AutomatedPipeline:
         cls._build_pipeline()
         cls.pipeline.append(("Classifier",clf))
         cls.pipeline = Pipeline(cls.pipeline)
+        return cls
 
     @classmethod
     def load_pipeline(cls, pipline_state):
         cls = cls()
         pipeline_state = joblib.load(pipline_state)
-        cls.pipeline = pipline_state["pipeline"]
+        cls.pipeline = pipeline_state["pipeline"]
         return cls
 
     def _build_pipeline(self):
@@ -272,8 +277,8 @@ class Results(object):
         self.results_df["Good"] = 1 - self.results_df["Bad"]
         self.results_df["Bin"] = pd.qcut(self.results_df["Score"],n_bins)
         grouped = self.results_df.groupby("Bin",as_index=False)
-        lower = grouped.min.Score
-        upper = grouped.max.Score
+        lower = grouped.min().Score
+        upper = grouped.max().Score
         self.gini_table = pd.DataFrame({"Lower":lower, "Upper":upper, "Count":grouped.sum().Good + grouped.sum().Bad, "Bad":grouped.sum().Bad, "Good":grouped.sum().Good})
         self.gini_table = (self.gini_table.sort_index(by='Lower')).reset_index(drop=True)
 
