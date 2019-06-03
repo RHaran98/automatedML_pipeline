@@ -13,7 +13,7 @@ def get_arguments():
     oot_parser = subparser.add_parser("oot")
     oot_parser.set_defaults(mode="oot")
 
-    train_parser.add_argument("--dataset", metavar="*.csv", type=str, help="Path to the dataset", required=True)
+    train_parser.add_argument("--dataset", metavar="*.csv", dest="dataset_path", type=str, help="Path to the dataset", required=True)
     train_parser.add_argument("--target", metavar="col", type=str, help="Name of the target columns", required=False)
     train_parser.add_argument("--clf", metavar="clf", type=str, help="Classifier to use", required=False, default="xgb",
                               choices=["rf", "dt", "gb", "xgb"])
@@ -28,7 +28,7 @@ def get_arguments():
                                    "data",
                               required=False, default=0, choices=[0, 1, 2])
 
-    oot_parser.add_argument("--dataset", metavar="*.csv", type=str, help="Path to the dataset", required=True)
+    oot_parser.add_argument("--dataset", metavar="*.csv", dest="dataset_path",type=str, help="Path to the dataset", required=True)
     oot_parser.add_argument("--model_path", metavar="*.sav", type=str, help="Path to the model dump", required=True)
     args = parser.parse_args()
 
