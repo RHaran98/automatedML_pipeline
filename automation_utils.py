@@ -69,7 +69,7 @@ class Dataset(object):
         self.data = self.whole_df.drop(columns=self.drop_cols + self.id_cols)
 
         # Shift target to the last
-        assert self.target in self.data.cols  # Check if target is present in the data
+        assert self.target in self.data.columns  # Check if target is present in the data
         _cols = list(self.data)
         _cols.insert(len(_cols), _cols.pop(_cols.index(self.target)))
         self.data = self.data.ix[:, _cols]
@@ -188,10 +188,10 @@ class AutoDropColumns(BaseEstimator, TransformerMixin):
         missing_thresh = len(X) * self.missing_thresh
         levels_thresh = len(X) * self.levels_thresh
         X.dropna(thresh=missing_thresh, axis=1, inplace=True)
-        cols = X.dtypes[X.dtypes=="object"].index
+        cols = X.dtypes[X.dtypes == "object"].index
         for i in cols:
             if len(X[i].unique()) > levels_thresh:
-                X.drop(columns=i,inplace=True)
+                X.drop(columns=i, inplace=True)
         return X
 
 
@@ -233,10 +233,6 @@ class AutomatedPipeline:
 
     @classmethod
     def make_pipeline(cls, clf):
-        """
-
-        :rtype: object
-        """
         cls = cls()
         cls._build_pipeline()
         cls.pipeline.append(("Classifier",clf))
@@ -258,6 +254,7 @@ class AutomatedPipeline:
         pipeline_state = {"pipeline": self.pipeline}
         joblib.dump(pipeline_state, save_path)
 
+
 class Results(object):
     def __init__(self, y_true, y_pred):
         self.y_true = self.standardize(y_true)
@@ -266,6 +263,7 @@ class Results(object):
         self.gini_table = None
         self.gini_val = None
         self.make_gini_table()
+
     @staticmethod
     def standardize(x):
         return list(np.array(x).ravel())
