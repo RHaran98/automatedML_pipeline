@@ -5,6 +5,7 @@ from sklearn.tree import DecisionTreeClassifier
 from xgboost.sklearn import XGBClassifier
 import os
 import logging
+import joblib
 logging.basicConfig(level=logging.DEBUG)
 
 def get_arguments():
@@ -16,7 +17,7 @@ def get_arguments():
     oot_parser.set_defaults(mode="oot")
 
     train_parser.add_argument("--dataset", metavar="*.csv", dest="dataset_path", type=str, help="Path to the dataset", required=True)
-    train_parser.add_argument("--target", metavar="col", type=str, help="Name of the target columns", required=False)
+    train_parser.add_argument("--target", metavar="col", type=str, help="Name of the target columns", required=False,default="TARGET")
     train_parser.add_argument("--clf", metavar="clf", type=str, help="Classifier to use", required=False, default="xgb",
                               choices=["rf", "dt", "gb", "xgb"])
     train_parser.add_argument("--drop", "--drop_columns", metavar="C", dest="drop_columns", type=str, nargs="*",
@@ -32,6 +33,9 @@ def get_arguments():
 
     oot_parser.add_argument("--dataset", metavar="*.csv", dest="dataset_path",type=str, help="Path to the dataset", required=True)
     oot_parser.add_argument("--model_path", metavar="*.sav", type=str, help="Path to the model dump", required=True)
+    oot_parser.add_argument("--target", metavar="col", type=str, help="Name of the target columns", required=False,default="TARGET")
+    oot_parser.add_argument("--sep", "--seperator", type=str, metavar="c", dest="seperator_character",
+                              help="Character to delimit columns in files", required=False, default="~")
     args = parser.parse_args()
 
     return args
@@ -62,12 +66,15 @@ def train(args):
 
 
 def oot(args):
-    dataset_path = args.dataset
+    dataset_path = args.dataset_path
     model_path = args.model_path
+    target = args.target
+    sep = args.seperator_character
     # model_state =  Model.load_model()
-    oot_dataset = Dataset.from_csv(dataset_path)
+    oot_dataset = Dataset.from_csv(dataset_path, target=target, sep=sep)
+    model_state = joblib.load(model_path)
     automated_pipeline = AutomatedPipeline.load_pipeline(model_path)
-    y_pred_oot = automated_pipeline.predict(oot_dataset.features, oot_dataset.target_col)
+    y_pred_oot = automated_pipeline.pipeline.predict_proba(oot_dataset.features)[:,1]
     y_true_oot = oot_dataset.target_col
     oot_results = Results(y_true=y_true_oot, y_pred=y_pred_oot)
     oot_results.gini_table.to_csv(os.path.join(os.path.dirname(dataset_path), "OOT_Summary.csv"))
