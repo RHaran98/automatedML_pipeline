@@ -229,8 +229,8 @@ class AutomatedPipeline:
     def add_one_hot_encoding(self):
         self.pipeline.append(("WOEncoder", OneHotEncoder(handle_unknown="ignore")))
 
-    def add_column_filter(self):
-        self.pipeline.append(("ColFilter", ColumnsSelector()))
+    def add_column_filter(self,suffix=""):
+        self.pipeline.append(("ColFilter"+str(suffix), ColumnsSelector()))
 
     def add_column_auto_drop(self):
         self.pipeline.append(("ColDrop", AutoDropColumns()))
@@ -252,20 +252,22 @@ class AutomatedPipeline:
 
     def _build_pipeline(self):
         self.add_column_auto_drop()
+        self.add_column_filter(0)
         self.add_woe_encoding()
-        self.add_column_filter()
+        self.add_column_filter(1)
 
-    def save_pipeline(self,save_path):
-        pipeline_state = {"pipeline": self.pipeline}
+    def save_pipeline(self,save_path,**kwargs):
+        pipeline_state = {"pipeline": self.pipeline, **kwargs}
         joblib.dump(pipeline_state, save_path)
 
 
 class Results(object):
-    def __init__(self, y_true, y_pred):
+    def __init__(self, y_true, y_pred, bins=None):
         self.y_true = self.standardize(y_true)
         self.y_pred = self.standardize(y_pred)
         self.results_df = pd.DataFrame({"Bad":y_true,"Score":y_pred})
         self.gini_table = None
+        self.bins = bins
         self.gini_val = None
         self.make_gini_table()
 
@@ -273,9 +275,12 @@ class Results(object):
     def standardize(x):
         return list(np.array(x).ravel())
 
-    def make_gini_table(self,n_bins=10):
+    def make_gini_table(self, n_bins=10):
         self.results_df["Good"] = 1 - self.results_df["Bad"]
-        self.results_df["Bin"] = pd.qcut(self.results_df["Score"],n_bins)
+        if self.bins:
+            self.results_df["Bin"] = pd.cut(self.results_df["Score"],bins=self.bins)
+        else:
+            self.results_df["Bin"], self.bins = pd.cut(self.results_df["Score"],n_bins,retbins=True)
         grouped = self.results_df.groupby("Bin",as_index=False)
         lower = grouped.min().Score
         upper = grouped.max().Score
