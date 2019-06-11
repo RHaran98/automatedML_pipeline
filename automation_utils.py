@@ -30,7 +30,7 @@ class Dataset(object):
 
     @classmethod
     def from_df(cls, df, target="TARGET", drop_cols=None, id_cols=None):
-        logging.info("Creating dataframe from ")
+        logging.info("Creating dataframe from dataframe")
         cls = cls()
         assert isinstance(df, pd.DataFrame)
         cls.whole_df = df
@@ -50,6 +50,7 @@ class Dataset(object):
     def from_csv(cls, file_path, target="TARGET", sep="~", drop_cols=None, id_cols=None):
         cls = cls()
         # Read in file
+        logging.info("Creating dataset from {}".format(file_path))
         cls.whole_df = pd.read_csv(file_path, sep=sep)
         cls.whole_cols = cls.whole_df.columns
         cls.target = target
