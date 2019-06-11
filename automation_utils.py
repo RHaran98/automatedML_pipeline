@@ -6,12 +6,16 @@ import joblib
 from sklearn.pipeline import Pipeline
 from sklearn.base import BaseEstimator, TransformerMixin
 import logging
+import os
+from sklearn.metrics import accuracy_score,  precision_score, recall_score, confusion_matrix, f1_score
+
 
 class Dataset(object):
     def __init__(self):
         # Declare the attributes
         self.whole_df = None
         self.whole_cols = None
+        self.dataset_name = None
         self.drop_cols = None
         self.id_cols = None
         self.data = None
@@ -32,9 +36,11 @@ class Dataset(object):
         cls.whole_df = df
         cls.whole_cols = cls.whole_df.columns
         cls.target = target
+        cls.dataset_name = "df"
         # Basic checks
         assert len(cls.whole_cols) == len(set(cls.whole_cols))  # Check for duplicate column names
-        assert target in cls.whole_cols  # Check if target col present
+        if target:
+            assert target in cls.whole_cols  # Check if target col present
 
         cls._populate_attributes(drop_cols, id_cols)
 
@@ -47,10 +53,14 @@ class Dataset(object):
         cls.whole_df = pd.read_csv(file_path, sep=sep)
         cls.whole_cols = cls.whole_df.columns
         cls.target = target
+        file_name = os.path.basename(file_path)
+        file_name = os.path.splitext(file_name)[0]
+        cls.dataset_name = file_name
 
         # Basic checks
         assert len(cls.whole_cols) == len(set(cls.whole_cols))  # Check for duplicate column names
-        assert cls.target in cls.whole_cols  # Check if target col present
+        if target:
+            assert cls.target in cls.whole_cols  # Check if target col present
 
         cls._populate_attributes(drop_cols, id_cols)
 
@@ -71,11 +81,12 @@ class Dataset(object):
         self.data = self.whole_df.drop(columns=self.drop_cols + self.id_cols)
 
         # Shift target to the last
-        assert self.target in self.data.columns  # Check if target is present in the data
-        _cols = list(self.data)
-        _cols.insert(len(_cols), _cols.pop(_cols.index(self.target)))
-        self.data = self.data.ix[:, _cols]
-        # self.features = self.data.columns[-1]
+        if self.target:
+            assert self.target in self.data.columns  # Check if target is present in the data
+
+            _cols = list(self.data)
+            _cols.insert(len(_cols), _cols.pop(_cols.index(self.target)))
+            self.data = self.data.ix[:, _cols]
 
         self._update_columns()
 
@@ -87,7 +98,10 @@ class Dataset(object):
         self.n_cols = self.data.shape[0]
         self.features = self.data.iloc[:,:-1]
         self.feature_names = self.features.columns
-        self.target_col = self.data[self.target]
+        if self.target:
+            self.target_col = self.data[self.target]
+        else:
+            self.target_col = None
         self.cat_cols = self.features.dtypes[self.features.dtypes == "object"].index
         self.num_cols = self.features.dtypes[~(self.features.dtypes == "object")].index
     #
@@ -203,20 +217,20 @@ class ColumnsSelector(BaseEstimator, TransformerMixin):
     # Class Constructor
     def __init__(self, cols=None):
         if not cols:
-            self._cols = []
+            self.cols = []
         else :
-            self._cols = cols
+            self.cols = cols
 
     def fit(self, X, y=None):
-        self._cols = X.columns
+        self.cols = X.columns
         return self
 
     def transform(self, X, y=None):
-        old_cols = list(set(self._cols) - set(X.columns))
-        for i in old_cols :
+        old_cols = list(set(self.cols) - set(X.columns))
+        for i in old_cols:
             X[i] = 0
 
-        return X[self._cols]
+        return X[self.cols]
 
 
 class AutomatedPipeline:
@@ -244,9 +258,8 @@ class AutomatedPipeline:
         return cls
 
     @classmethod
-    def load_pipeline(cls, pipline_state):
+    def load_pipeline(cls, pipeline_state):
         cls = cls()
-        pipeline_state = joblib.load(pipline_state)
         cls.pipeline = pipeline_state["pipeline"]
         return cls
 
@@ -265,19 +278,25 @@ class Results(object):
     def __init__(self, y_true, y_pred, bins=None):
         self.y_true = self.standardize(y_true)
         self.y_pred = self.standardize(y_pred)
+        self.y_pred_labels = np.round(self.y_pred)
         self.results_df = pd.DataFrame({"Bad":y_true,"Score":y_pred})
+
         self.gini_table = None
         self.bins = bins
         self.gini_val = None
-        self.make_gini_table()
+        self._make_gini_table()
+
+        self.metrics_dict = {}
+        self.metrics_table = None
+        self._calculate_common_metrics()
 
     @staticmethod
     def standardize(x):
         return list(np.array(x).ravel())
 
-    def make_gini_table(self, n_bins=10):
+    def _make_gini_table(self, n_bins=10):
         self.results_df["Good"] = 1 - self.results_df["Bad"]
-        if self.bins:
+        if self.bins is not None:
             self.results_df["Bin"] = pd.cut(self.results_df["Score"],bins=self.bins)
         else:
             self.results_df["Bin"], self.bins = pd.cut(self.results_df["Score"],n_bins,retbins=True)
@@ -285,7 +304,7 @@ class Results(object):
         lower = grouped.min().Score
         upper = grouped.max().Score
         self.gini_table = pd.DataFrame({"Lower":lower, "Upper":upper, "Count":grouped.sum().Good + grouped.sum().Bad, "Bad":grouped.sum().Bad, "Good":grouped.sum().Good})
-        self.gini_table = (self.gini_table.sort_index(by='Lower')).reset_index(drop=True)
+        self.gini_table = (self.gini_table.sort_values(by='Lower')).reset_index(drop=True)
 
         self.gini_table["Bad rate"] = (self.gini_table["Bad"] / self.gini_table["Count"])*100
         self.gini_table["Bad Capture rate"] = np.cumsum(self.gini_table["Bad"]/self.gini_table["Bad"].sum())*100
@@ -296,6 +315,16 @@ class Results(object):
         self.gini_table["Gini"] = (self.gini_table["Bad Capture rate"] + self.gini_table["Bad Capture rate"].shift(1).fillna(0)) * (self.gini_table["Good Capture rate"] - self.gini_table["Good Capture rate"].shift(1).fillna(0)) * (0.5/100.0)
         self.gini_val = np.abs(0.5 - (self.gini_table["Gini"].sum()/100.0))
 
-    def common_metrics(self):
-        # TODO:
-        pass
+    def _calculate_common_metrics(self):
+        self.metrics_dict["Accuracy"] = accuracy_score(self.y_true, self.y_pred_labels)
+        self.metrics_dict["F1"] = f1_score(self.y_true, self.y_pred_labels)
+        self.metrics_dict["Precision"] = precision_score(self.y_true, self.y_pred_labels)
+        self.metrics_dict["Recall"] = recall_score(self.y_true, self.y_pred_labels)
+        self.metrics_dict["GINI"] = self.gini_val
+        con_matrix = confusion_matrix(self.y_true, self.y_pred_labels)
+        tn, fp, fn, tp = con_matrix.ravel()
+        self.metrics_dict["True negatives"] = tn
+        self.metrics_dict["False positives"] = fp
+        self.metrics_dict["False negatives"] = fn
+        self.metrics_dict["True positives"] = tp
+        self.metrics_table = pd.DataFrame.from_dict(self.metrics_dict, orient="index")
