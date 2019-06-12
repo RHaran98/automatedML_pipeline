@@ -29,14 +29,14 @@ class Dataset(object):
         self.feature_names = None
 
     @classmethod
-    def from_df(cls, df, target="TARGET", drop_cols=None, id_cols=None):
-        logging.info("Creating dataframe from dataframe")
+    def from_df(cls, df, target="TARGET", drop_cols=None, id_cols=None,name="df"):
         cls = cls()
         assert isinstance(df, pd.DataFrame)
         cls.whole_df = df
         cls.whole_cols = cls.whole_df.columns
         cls.target = target
-        cls.dataset_name = "df"
+        cls.dataset_name = name
+        logging.info("Creating dataset object from dataframe")
         # Basic checks
         assert len(cls.whole_cols) == len(set(cls.whole_cols))  # Check for duplicate column names
         if target:
@@ -50,13 +50,13 @@ class Dataset(object):
     def from_csv(cls, file_path, target="TARGET", sep="~", drop_cols=None, id_cols=None):
         cls = cls()
         # Read in file
-        logging.info("Creating dataset from {}".format(file_path))
         cls.whole_df = pd.read_csv(file_path, sep=sep)
         cls.whole_cols = cls.whole_df.columns
         cls.target = target
         file_name = os.path.basename(file_path)
         file_name = os.path.splitext(file_name)[0]
         cls.dataset_name = file_name
+        logging.info("Creating dataset from {}".format(file_path))
 
         # Basic checks
         assert len(cls.whole_cols) == len(set(cls.whole_cols))  # Check for duplicate column names
@@ -97,7 +97,7 @@ class Dataset(object):
     def _update_columns(self):
         self.n_rows = self.data.shape[0]
         self.n_cols = self.data.shape[0]
-        self.features = self.data.iloc[:,:-1]
+        self.features = self.data.iloc[:, :-1]
         self.feature_names = self.features.columns
         if self.target:
             self.target_col = self.data[self.target]
@@ -105,112 +105,28 @@ class Dataset(object):
             self.target_col = None
         self.cat_cols = self.features.dtypes[self.features.dtypes == "object"].index
         self.num_cols = self.features.dtypes[~(self.features.dtypes == "object")].index
-    #
-    # def handle_missing_values(self, threshold=0.3):
-    #     thresh = len(self.data) * threshold
-    #     self.data.dropna(thresh=thresh, axis=1, inplace=True)
-    #
-    # def one_hot_encoding(self, cols=None):
-    #     if cols:
-    #         self.data = pd.get_dummies(self.data)
-    #         new_levels = list(set(self.data.columns) - set(cols))
-    #         old_levels = list(set(cols) - set(self.data.columns))
-    #         # self.data.drop(columns=new_levels,inplace=True)
-    #         for i in new_levels:
-    #             org_i = i.split('_')[0]
-    #             org_i_alt = org_i + "_" + "Other"
-    #             if org_i_alt in self.data.columns:
-    #                 self.data[org_i_alt] = self.data[org_i_alt] | self.data[i]
-    #         self.data.drop(columns=new_levels, inplace=True)
-    #
-    #         for i in old_levels:
-    #             self.data[i] = 0
-    #     else:
-    #         self.data = pd.get_dummies(self.data)
-    #
-    # def collapse_levels(self, cols=None, threshold=0.01):
-    #     pass
-    #
-    # def woe_encoding(self):
-    #     self.enc = WOEEncoder(cols=self.cat_cols).fit(self.data[self.features],self.data[self.target])
-    #     self.data = self.enc.transform(self.data)
-    #     self._update_columns()
-    #
-    # def auto_drop_columns(self, cols=None, levels_threshold=0.3,missing_thresh=0.3):
-    #     thresh = levels_threshold*len(self.data)
-    #     if cols:
-    #         columns = cols
-    #     else:
-    #         columns = self.cat_cols
-    #
-    #     for col in columns:
-    #         if len(self.data[col].unique()) > thresh:
-    #             self.data.drop(columns=col,inplace=True)
-    #
-    #     self.data.dropna(axis=1, thresh=int(missing_thresh * len(self.data)))
-    #
-    #     self._update_columns()
 
     def test_train_split(self, split_ratio=0.3, seed=1234):
         train = self.data.sample(frac=1-split_ratio,random_state=seed)
         test = self.data.drop(train.index)
 
-        d_train = Dataset.from_df(train, target=self.target)
-        d_test = Dataset.from_df(test, target=self.target)
+        d_train = Dataset.from_df(train, target=self.target,name="train")
+        d_test = Dataset.from_df(test, target=self.target,name="test")
 
         return d_train, d_test
 
 
-# class Model(object):
-#     def __init__(self,model=None):
-#         self.model = model
-#         self.feature_names = None
-#         self.target = None
-#         self.isTrained = False
-#
-#     def fit(self, dataset):
-#         self.feature_names = dataset.feature_names
-#         self.target = dataset.target
-#         self.model.fit(dataset.data[self.feature_names], dataset.data[self.target])
-#         self.isTrained = True
-#
-#     def predict(self, dataset):
-#         assert self.isTrained
-#         features = np.array(dataset.data[self.feature_names])
-#         return self.model.predict(features)
-#
-#     def load_model(self, model_path):
-#         assert os.path.isfile(model_path)
-#         self.isTrained = True
-#         model_state = joblib.load(model_path)
-#         self.model = model_state["model"]
-#         self.feature_names = model_state["feature_names"]
-#         self.target = model_state["target"]
-#
-#     def save_model(self,model_path):
-#         assert self.isTrained
-#         model_state = {"model": self.model, "feature_names": self.feature_names, "target": self.target}
-#         joblib.dump(model_state, model_path)
-
 class AutoDropColumns(BaseEstimator, TransformerMixin):
     # Class Constructor
-    def __init__(self, missing_thresh=0.3, levels_thresh=0.3):
+    def __init__(self, missing_thresh=0.3):
         self.missing_thresh = missing_thresh
-        self.levels_thresh = levels_thresh
 
     def fit(self, X, y=None):
         return self
 
     def transform(self, X, y=None):
         missing_thresh = len(X) * self.missing_thresh
-        levels_thresh = len(X) * self.levels_thresh
         X.dropna(thresh=missing_thresh, axis=1, inplace=True)
-        cols = X.dtypes[X.dtypes == "object"].index
-        for i in cols:
-            if len(X[i].unique()) > levels_thresh:
-                logging.debug("Dropping column {0}".format(i))
-                X.drop(columns=i, inplace=True)
-        logging.debug("Columns {0}".format(X.columns))
         return X
 
 
@@ -234,12 +150,47 @@ class ColumnsSelector(BaseEstimator, TransformerMixin):
         return X[self.cols]
 
 
+class CustomEncoder(BaseEstimator, TransformerMixin):
+    # Class constructor
+    def __init__(self):
+        self.woe = None
+        self.woe_cols = None
+        self.dummy_cols = None
+        self.thresh = None
+
+    @staticmethod
+    def thresh_func(n):
+        return n//50 + np.ceil(np.log2(n))
+
+    def fit(self, X,y):
+        self.woe_cols = []
+        self.dummy_cols= []
+        self.thresh = self.thresh_func(len(X))
+        cat_cols = X.dtypes[X.dtypes == "object"].index
+        for i in cat_cols:
+            if len(X[i].unique()) > self.thresh:
+                self.woe_cols.append(i)
+            else :
+                self.dummy_cols.append(i)
+        self.woe = WOEEncoder(drop_invariant=True, random_state=1234,cols=self.woe_cols)
+        self.woe.fit(X, y)
+        return self
+
+    def transform(self, X, y=None):
+        X = self.woe.transform(X, y)
+        X = pd.get_dummies(X, columns=self.dummy_cols)
+        return X
+
+
 class AutomatedPipeline:
     def __init__(self):
         self.pipeline = []
 
+    def add_custom_encoding(self):
+        self.pipeline.append(("CustomEncoder", CustomEncoder()))
+
     def add_woe_encoding(self):
-        self.pipeline.append(("WOEncoder",WOEEncoder()))
+        self.pipeline.append(("WOEncoder", WOEEncoder()))
 
     def add_one_hot_encoding(self):
         self.pipeline.append(("WOEncoder", OneHotEncoder(handle_unknown="ignore")))
@@ -254,7 +205,7 @@ class AutomatedPipeline:
     def make_pipeline(cls, clf):
         cls = cls()
         cls._build_pipeline()
-        cls.pipeline.append(("Classifier",clf))
+        cls.pipeline.append(("Classifier", clf))
         cls.pipeline = Pipeline(cls.pipeline)
         return cls
 
@@ -267,7 +218,7 @@ class AutomatedPipeline:
     def _build_pipeline(self):
         self.add_column_auto_drop()
         self.add_column_filter(0)
-        self.add_woe_encoding()
+        self.add_custom_encoding()
         self.add_column_filter(1)
 
     def save_pipeline(self,save_path,**kwargs):
